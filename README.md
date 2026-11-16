@@ -60,11 +60,14 @@ http://localhost:8000
 ```text
 RubikCubeGame/
 ├── README.md
+├── css/
+│   └── styles.css
 ├── index.html
-└── .git/
+└── js/
+    └── script.js
 ```
 
-The entire game logic, CSS styling, and rendering are contained in `index.html`, making it easy to modify and run without a framework.
+The page markup is in `index.html`, with styling in `css/styles.css` and game logic in `js/script.js`. The app remains a static site and does not require a framework.
 
 ## Notes
 
