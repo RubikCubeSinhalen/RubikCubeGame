@@ -9,7 +9,7 @@ A browser-based Rubik's Cube game and solver playground built as a single-page H
 - Keyboard controls for face turns and undo/redo actions
 - Scramble controls with easy, medium, and hard difficulty presets
 - Move counter and timer with best-time tracking using browser local storage
-- Hint system and auto-solve support
+- Hints and auto-solve based on the cube's current sticker positions, using a near-optimal two-phase solver
 - Reset, replay, and solved-state modal feedback
 
 ## How to run
@@ -51,8 +51,8 @@ http://localhost:8000
 - Scramble: create a fresh random scramble
 - Undo: reverse the last move
 - Redo: reapply a reverted move
-- Hint: highlight the move that would reverse the previous turn
-- Auto-solve: reverse the current history to return the cube to its solved state
+- Hint: highlight the first move in a solver-generated solution for the current cube state
+- Auto-solve: solve the current cube state with a near-optimal two-phase solution (not necessarily the globally shortest solution)
 - Reset: restore the cube to a clean, unsolved starting state
 
 ## Project structure
@@ -64,13 +64,16 @@ RubikCubeGame/
 │   └── styles.css
 ├── index.html
 └── js/
+    ├── CUBEJS-LICENSE.txt
+    ├── cubejs-cube.js
+    ├── cubejs-solve.js
     └── script.js
 ```
 
-The page markup is in `index.html`, with styling in `css/styles.css` and game logic in `js/script.js`. The app remains a static site and does not require a framework.
+The page markup is in `index.html`, with styling in `css/styles.css` and game logic in `js/script.js`. The app remains a static site and does not require a framework. The solver is bundled locally from [cube.js](https://github.com/ldez/cubejs) 1.3.2 in `js/cubejs-cube.js` and `js/cubejs-solve.js`; its MIT license is included in `js/CUBEJS-LICENSE.txt`. Solving works offline. The Kociemba two-phase algorithm gives a fast, near-optimal solution, not a guaranteed globally shortest one. Solver input supports standard outer-face turns; moving a middle slice is reported as unsupported.
 
 ## Notes
 
 - Best time is stored in the browser via `localStorage`.
 - The app is optimized for desktop and mobile browsers with pointer-based input.
-- No external build tools or dependencies are required.
+- No build tools, package installation, or internet connection are required; the solver is bundled locally.

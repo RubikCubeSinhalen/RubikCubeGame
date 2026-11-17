@@ -40,6 +40,7 @@
   let queue = [], busy = false, lock = false, gen = 0;
   let hist = [], undo = [], redo = [], scrambled = false, assisted = false;
   let timer = null, t0 = 0, elapsed = 0, best = null, hl = [];
+  let solverReady = false, solverMessage = '';
   try { best = +localStorage.getItem('cubesolve-best') || null; } catch (e) { }
 
   const layerOf = m => cubies.filter(c => c.p[AX[m.a]] === m.l);
@@ -69,7 +70,7 @@
     spin(L, m.a, 0, m.s * 90, lock ? 110 : queue.length ? 150 : 260, () => { commit(m, L); next(); });
   }
   function log(m, kind) {
-    clearHint();
+    clearHint(); solverMessage = '';
     if (kind === 'user') { undo.push(m); redo = []; }
     if ((kind === 'user' || kind === 'redo') && scrambled && !timer) startTimer();
     rec(m);
@@ -83,7 +84,7 @@
   function scramble() {
     if (lock) return;
     halt(); stopTimer(); resetCube(); $('win').classList.remove('on');
-    hist = []; undo = []; redo = []; elapsed = 0; assisted = false; $('time').textContent = '0:00.0';
+    hist = []; undo = []; redo = []; elapsed = 0; assisted = false; solverMessage = ''; $('time').textContent = '0:00.0';
     scrambled = true; lock = true;
     const ks = Object.keys(MV); let last = '';
     for (let i = 0; i < +$('len').value; i++) {
@@ -91,14 +92,79 @@
       last = k; play(Math.random() < .5 ? inv(MV[k]) : MV[k], 'scramble');
     }
   }
+  function cubeFacelets() {
+    const faceIndex = { U: 0, R: 9, F: 18, D: 27, L: 36, B: 45 };
+    const facelets = Array(54).fill(null);
+    const centerCubies = cubies.filter(c => c.st.length === 1 && c.p0.filter(v => v === 0).length === 1);
+    if (centerCubies.some(c => c.p.some((v, i) => v !== c.p0[i]))) {
+      throw new Error('The solver supports face turns only; a middle-slice turn moved a center. Reset the cube to continue.');
+    }
+
+    for (const c of cubies) for (const sticker of c.st) {
+      const n = [0, 1, 2].map(i => c.R[0][i] * sticker.n[0] + c.R[1][i] * sticker.n[1] + c.R[2][i] * sticker.n[2]);
+      const face = { '0,-1,0': 'U', '1,0,0': 'R', '0,0,1': 'F', '0,1,0': 'D', '-1,0,0': 'L', '0,0,-1': 'B' }[n.join()];
+      if (!face) throw new Error('The cube contains an invalid sticker orientation.');
+
+      const [x, y, z] = c.p;
+      const row = face === 'U' ? z + 1 : face === 'D' ? 1 - z : y + 1;
+      const col = face === 'R' ? 1 - z : face === 'B' ? 1 - x : face === 'L' ? z + 1 : x + 1;
+      facelets[faceIndex[face] + row * 3 + col] = sticker.f;
+    }
+    if (facelets.some(f => !f)) throw new Error('The cube has missing stickers.');
+    return facelets.join('');
+  }
+
+  function solutionMoves(algorithm) {
+    return algorithm.trim().split(/\s+/).filter(Boolean).flatMap(token => {
+      const match = /^([URFDLB])([2']?)$/.exec(token);
+      if (!match) throw new Error(`The solver returned an unsupported move: ${token}`);
+      const move = MV[match[1]];
+      const turn = match[2] === "'" ? inv(move) : move;
+      return match[2] === '2' ? [turn, turn] : [turn];
+    });
+  }
+
+  function requestSolution(onSolution, onError = () => {}) {
+    if (lock || busy) return;
+    const solver = window.Cube;
+    if (!solver) {
+      solverMessage = 'The solver library did not load. Check your internet connection and reload the page.';
+      ui(); onError();
+      return;
+    }
+    lock = true; solverMessage = 'Preparing solver…'; ui();
+    setTimeout(() => {
+      let moves;
+      try {
+        if (!solverReady) { solver.initSolver(); solverReady = true; }
+        moves = solutionMoves(solver.fromString(cubeFacelets()).solve());
+      } catch (error) {
+        lock = false;
+        solverMessage = `Unable to solve this cube: ${error.message}`;
+        ui(); onError();
+        return;
+      }
+      lock = false; solverMessage = '';
+      onSolution(moves);
+    }, 30);
+  }
+
   function autoSolve() {
-    if (lock || busy || !hist.length) return;
-    lock = true; assisted = true; stopTimer(); undo = []; redo = [];
-    hist.slice().reverse().map(inv).forEach(m => play(m, 'solve'));
+    if (lock || busy || isSolved()) return;
+    const wasTimerRunning = !!timer;
+    stopTimer();
+    requestSolution(moves => {
+      assisted = true; undo = []; redo = [];
+      if (!moves.length) { ui(); if (scrambled) win(); return; }
+      lock = true;
+      moves.forEach(m => play(m, 'solve'));
+    }, () => {
+      if (wasTimerRunning && scrambled) { startTimer(); ui(); }
+    });
   }
   function reset() {
     halt(); stopTimer(); resetCube(); hist = []; undo = []; redo = [];
-    scrambled = false; assisted = false; elapsed = 0; $('time').textContent = '0:00.0';
+    scrambled = false; assisted = false; elapsed = 0; solverMessage = ''; $('time').textContent = '0:00.0';
     $('win').classList.remove('on'); ui();
   }
 
@@ -110,10 +176,15 @@
     return `Turn the middle layer ${MV[g].s === m.s ? 'clockwise ↻' : 'counter-clockwise ↺'} as seen from the ${NAME[g]}`;
   }
   function hint() {
-    if (lock || busy || !hist.length) return;
-    const m = inv(hist[hist.length - 1]); clearHint();
-    layerOf(m).forEach(c => { c.el.classList.add('hl'); hl.push(c); });
-    $('tip').textContent = describe(m); $('tip').classList.add('on');
+    if (lock || busy || isSolved()) return;
+    requestSolution(moves => {
+      clearHint();
+      if (!moves.length) { $('tip').textContent = 'The cube is already solved.'; $('tip').classList.add('on'); return; }
+      const m = moves[0];
+      layerOf(m).forEach(c => { c.el.classList.add('hl'); hl.push(c); });
+      $('tip').textContent = describe(m); $('tip').classList.add('on');
+      ui();
+    });
   }
   function clearHint() { hl.forEach(c => c.el.classList.remove('hl')); hl = []; $('tip').classList.remove('on'); }
 
@@ -132,12 +203,12 @@
   function ui() {
     $('moves').textContent = undo.length;
     $('best').textContent = best ? fmt(best) : '–';
-    $('scramble').disabled = lock; $('solve').disabled = lock || !hist.length;
+    $('scramble').disabled = lock; $('solve').disabled = lock || isSolved();
     $('undo').disabled = lock || !undo.length; $('redo').disabled = lock || !redo.length;
-    $('hint').disabled = lock || !hist.length;
-    $('status').textContent = lock ? 'Working…' : scrambled
+    $('hint').disabled = lock || isSolved();
+    $('status').textContent = lock ? solverMessage || 'Working…' : solverMessage || (scrambled
       ? (timer ? 'Keep going. Get each face to a single colour.' : 'Scrambled. Your first move starts the clock.')
-      : 'Free play. Press Scramble to start a timed game.';
+      : 'Free play. Press Scramble to start a timed game.');
   }
   function win() {
     const ran = timer; stopTimer(); scrambled = false;
