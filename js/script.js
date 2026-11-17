@@ -1,6 +1,6 @@
 (() => {
   const S = 84;
-  const COL = { U: '#f8fafc', D: '#facc15', F: '#22c55e', B: '#3b82f6', R: '#ef4444', L: '#fb923c' };
+  const COL = { U: 'white', D: 'yellow', F: '#22c55e', B: '#3b82f6', R: 'red', L: '#fb923c' };
   const FACES = { U: [0, -1, 0], D: [0, 1, 0], F: [0, 0, 1], B: [0, 0, -1], R: [1, 0, 0], L: [-1, 0, 0] };
   const FT = { F: '', B: 'rotateY(180deg)', R: 'rotateY(90deg)', L: 'rotateY(-90deg)', U: 'rotateX(90deg)', D: 'rotateX(-90deg)' };
   // A move is {a: axis, l: layer (-1,0,1), s: +1/-1 quarter turn about +axis}
